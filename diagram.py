@@ -7,7 +7,7 @@ import argparse
 # ------------------------------
 # Parse command-line arguments
 # ------------------------------
-parser = argparse.ArgumentParser(description="Generate per-module plots")
+parser = argparse.ArgumentParser(description="Generate per-module plots with totals")
 parser.add_argument('--results_dir', required=True, help='Path to folder containing per_module.csv')
 parser.add_argument('--out_dir', default='plots', help='Folder to save generated plots')
 args = parser.parse_args()
@@ -44,10 +44,20 @@ print(f"Fan-out: {total_fan_out}")
 # 1. LOC per module (physical vs logical)
 # ------------------------------
 plt.figure(figsize=(14,6))
-df_module.plot.bar(x='module_short', y=['loc_physical', 'loc_logical'])
-plt.title(f'Physical vs Logical LOC per Module (Total LOC: {total_loc_physical})')
+ax = df_module.plot.bar(x='module_short', y=['loc_physical', 'loc_logical'])
 plt.ylabel('Lines of Code')
 plt.xticks(rotation=45, ha='right')
+# Set y-axis max slightly above the max LOC
+ymax = df_module[['loc_physical', 'loc_logical']].max().max()
+print("ymax is:", ymax)
+plt.ylim(0, ymax)
+# Add total as text box
+plt.text(0.95, 0.95,
+         f'Total Pysical LOC: {total_loc_physical}\nTotal Logical LOC: {total_loc_logical}',
+         horizontalalignment='right',
+         verticalalignment='top',
+         transform=ax.transAxes,
+         bbox=dict(facecolor='white', alpha=0.7, edgecolor='gray'))
 plt.tight_layout()
 plt.savefig(os.path.join(out_dir, 'loc_per_module.png'))
 plt.close()
@@ -56,10 +66,16 @@ plt.close()
 # 2. Cyclomatic Complexity per module
 # ------------------------------
 plt.figure(figsize=(14,6))
-df_module.plot.bar(x='module_short', y='cc_total', color='orange')
-plt.title(f'Total Cyclomatic Complexity per Module (Total CC: {total_cc})')
+ax = df_module.plot.bar(x='module_short', y='cc_total', color='orange')
 plt.ylabel('Cyclomatic Complexity')
 plt.xticks(rotation=45, ha='right')
+# Add total as text box
+plt.text(0.95, 0.95,
+         f'Total CC: {total_cc}',
+         horizontalalignment='right',
+         verticalalignment='top',
+         transform=ax.transAxes,
+         bbox=dict(facecolor='white', alpha=0.7, edgecolor='gray'))
 plt.tight_layout()
 plt.savefig(os.path.join(out_dir, 'cc_per_module.png'))
 plt.close()
@@ -68,10 +84,16 @@ plt.close()
 # 3. Fan-in and Fan-out per module (stacked)
 # ------------------------------
 plt.figure(figsize=(14,6))
-df_module.plot.bar(x='module_short', y=['fan_in_total', 'fan_out_total'], stacked=True)
-plt.title(f'Fan-in and Fan-out per Module (Total Fan-in: {total_fan_in}, Total Fan-out: {total_fan_out})')
+ax = df_module.plot.bar(x='module_short', y=['fan_in_total', 'fan_out_total'], stacked=True)
 plt.ylabel('Count')
 plt.xticks(rotation=45, ha='right')
+# Add totals as text box
+plt.text(0.95, 0.95,
+         f'Total Fan-in: {total_fan_in}\nTotal Fan-out: {total_fan_out}',
+         horizontalalignment='right',
+         verticalalignment='top',
+         transform=ax.transAxes,
+         bbox=dict(facecolor='white', alpha=0.7, edgecolor='gray'))
 plt.tight_layout()
 plt.savefig(os.path.join(out_dir, 'fanin_fanout_per_module.png'))
 plt.close()
