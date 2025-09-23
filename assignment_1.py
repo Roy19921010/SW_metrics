@@ -83,8 +83,8 @@ def compute_cyclomatic_complexity(path):
                     if func_name:
                         cc_per_func[func_name] = cc
                         cc_total += cc
-                    func_name = re.findall(r"(\w+)\s*\(", s)
-                    func_name = func_name[0] if func_name else "anon_func"
+                    match = re.findall(r"(\w+)\s*\(", s)
+                    func_name = match[0] if match else "anon_func"
                     cc = 1
 
             elif ext == '.py':
@@ -92,8 +92,8 @@ def compute_cyclomatic_complexity(path):
                     if func_name:
                         cc_per_func[func_name] = cc
                         cc_total += cc
-                    func_name = re.findall(r"def\s+(\w+)\s*\(", s)
-                    func_name = func_name[0] if func_name else "anon_func"
+                    match = re.findall(r"def\s+(\w+)\s*\(", s)
+                    func_name = match[0] if match else "anon_func"
                     cc = 1
 
             # Count decision points
@@ -121,26 +121,35 @@ FUNC_CALL_RE_C = re.compile(r"\b([A-Za-z_][A-Za-z0-9_:<>]*)\s*\(")
 FUNC_DEF_RE_PY = re.compile(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 FUNC_CALL_RE_PY = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
-def extract_functions_and_calls(file_path):
-    funcs = []
-    calls = []
-    ext = Path(file_path).suffix.lower()
-    try:
-        with open(file_path, 'r', errors='ignore') as f:
-            text = f.read()
-            if ext in ('.c', '.cpp', '.java', '.js', '.ts', '.hpp', '.cc'):
-                for m in FUNC_DEF_RE_C.finditer(text):
-                    funcs.append(m.group(2))
-                for m in FUNC_CALL_RE_C.finditer(text):
-                    calls.append(m.group(1))
-            elif ext == '.py':
-                for m in FUNC_DEF_RE_PY.finditer(text, re.MULTILINE):
-                    funcs.append(m.group(1))
-                for m in FUNC_CALL_RE_PY.finditer(text):
-                    calls.append(m.group(1))
-    except Exception:
-        pass
-    return funcs, calls
+def build_callgraph(files):
+    callgraph = defaultdict(set)
+    for fpath in files:
+        ext = Path(fpath).suffix.lower()
+        try:
+            with open(fpath, 'r', errors='ignore') as f:
+                lines = f.readlines()
+            current_func = None
+            for line in lines:
+                s = line.strip()
+                # Detect function start
+                if ext == '.py' and s.startswith("def "):
+                    match = re.findall(r"def\s+(\w+)\s*\(", s)
+                    current_func = match[0] if match else None
+                    continue
+                elif ext in ('.c', '.cpp', '.java', '.js', '.ts', '.hpp', '.cc'):
+                    match = re.findall(r"\b([A-Za-z_][A-Za-z0-9_:<>]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", s)
+                    current_func = match[0][1] if match else None
+                    continue
+                if current_func:
+                    if ext == '.py':
+                        calls = [m.group(1) for m in FUNC_CALL_RE_PY.finditer(s)]
+                    else:
+                        calls = [m.group(1) for m in FUNC_CALL_RE_C.finditer(s)]
+                    for c in calls:
+                        callgraph[current_func].add(c)
+        except Exception:
+            continue
+    return callgraph
 
 def compute_fan_in_out(callgraph):
     fan_in = {f: 0 for f in callgraph}
@@ -173,9 +182,9 @@ def main():
     per_func_rows = []
     total_loc = total_lloc = total_cc = 0
 
-    callgraph = defaultdict(set)
-
-    for i, fpath in enumerate(files):
+    # ------------------- compute LOC & CC -------------------
+    cc_per_func_total = {}
+    for fpath in files:
         loc = count_physical_loc_file(fpath)
         lloc = count_logical_loc_file(fpath)
         cc_per_func, cc_total_file = compute_cyclomatic_complexity(fpath)
@@ -192,41 +201,75 @@ def main():
         })
 
         for func, cc in cc_per_func.items():
+            cc_per_func_total[func] = cc
             per_func_rows.append({
                 'file': fpath,
                 'function': func,
                 'cc': cc,
-                'fan_in': 0,   # fill later
-                'fan_out': 0   # fill later
+                'fan_in': 0,
+                'fan_out': 0
             })
 
-        funcs, calls = extract_functions_and_calls(fpath)
-        for func in funcs:
-            for c in calls:
-                callgraph[func].add(c)
-
+    # ------------------- compute call graph & fan-in/out -------------------
+    callgraph = build_callgraph(files)
     fan_in, fan_out = compute_fan_in_out(callgraph)
-
-    # update per-function rows with fan-in/out
     for row in per_func_rows:
         fn = row['function']
         row['fan_in'] = fan_in.get(fn, 0)
         row['fan_out'] = fan_out.get(fn, 0)
 
+    # ------------------- per-module aggregation -------------------
+    module_metrics = defaultdict(lambda: {
+        'loc_physical': 0,
+        'loc_logical': 0,
+        'cc_total': 0,
+        'function_count': 0,
+        'fan_in_total': 0,
+        'fan_out_total': 0
+    })
+
+    for row in per_func_rows:
+        file_path = Path(row['file'])
+        module_name = str(file_path.parent.relative_to(repo))
+        if module_name == '':
+            module_name = 'root'
+        module_metrics[module_name]['function_count'] += 1
+        module_metrics[module_name]['cc_total'] += row['cc']
+        module_metrics[module_name]['fan_in_total'] += row['fan_in']
+        module_metrics[module_name]['fan_out_total'] += row['fan_out']
+
+    for row in per_file_rows:
+        file_path = Path(row['file'])
+        module_name = str(file_path.parent.relative_to(repo))
+        if module_name == '':
+            module_name = 'root'
+        module_metrics[module_name]['loc_physical'] += row['loc_physical']
+        module_metrics[module_name]['loc_logical'] += row['loc_logical']
+
+    # ------------------- write CSVs -------------------
     os.makedirs(args.outdir, exist_ok=True)
 
-    # per-file CSV
     with open(os.path.join(args.outdir, 'per_file.csv'), 'w', newline='', encoding='utf-8') as csvf:
         writer = csv.DictWriter(csvf, fieldnames=['file','loc_physical','loc_logical','cc_total'])
         writer.writeheader()
         writer.writerows(per_file_rows)
 
-    # per-function CSV
     with open(os.path.join(args.outdir, 'per_function.csv'), 'w', newline='', encoding='utf-8') as csvf:
         writer = csv.DictWriter(csvf, fieldnames=['file','function','cc','fan_in','fan_out'])
         writer.writeheader()
         writer.writerows(per_func_rows)
 
+    module_csv = os.path.join(args.outdir, 'per_module.csv')
+    with open(module_csv, 'w', newline='', encoding='utf-8') as csvf:
+        fieldnames = ['module','loc_physical','loc_logical','cc_total','function_count','fan_in_total','fan_out_total']
+        writer = csv.DictWriter(csvf, fieldnames=fieldnames)
+        writer.writeheader()
+        for module, metrics in module_metrics.items():
+            row = {'module': module}
+            row.update(metrics)
+            writer.writerow(row)
+
+    # ------------------- write summary & callgraph -------------------
     summary = {
         'repo': repo,
         'file_count': len(files),
@@ -235,7 +278,6 @@ def main():
         'total_cc': total_cc,
         'function_count': len(per_func_rows)
     }
-
     with open(os.path.join(args.outdir, 'summary.json'), 'w') as f:
         json.dump(summary, f, indent=2)
 
