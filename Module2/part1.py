@@ -8,15 +8,25 @@ from scipy.interpolate import CubicSpline
 import ast
 # import regex as re
 import re
-PROD_URL =  "elastic server link"
+PROD_URL =  "elastic url"
 PROD_AUTH = "" # Fill in your appliaction token
 url =  PROD_URL+ "/nosa-service-metadata/metadata/query"
 headers = {'Content-type': 'application/json', 'Accept': 'application/json', 'Authorization': PROD_AUTH}
-# ---- Choose your time range ----
-start_date = datetime(2025, 10, 1, 10, 0, 0)   # start UTC time
-days_to_collect = 5                             # number of days to collect
+# ---- USER INPUTS ----
+start_year=2025
+start_month=10
+start_day=1
+start_date = datetime(start_year, start_month, start_day, 10, 0, 0)
 
-# ---- Data collector ----
+end_year=2025
+end_month=10
+end_day=6
+end_date = datetime(end_year, end_month, end_day, 10, 0, 0)
+future_days = 5
+
+days_to_collect = (end_date - start_date).days
+
+# ---- DATA COLLECTION ----
 all_data = []
 daily_counts = []
 
@@ -28,39 +38,21 @@ for i in range(days_to_collect):
         "query": {
             "bool": {
                 "must": [
-                    {
-                        "query_string": {
-                            "query": "ESID0002",
-                            "time_zone": "Europe/Stockholm"
-                        }
-                    },
-                    {
-                        "range": {
-                            "Created_Time": {
-                                "format": "strict_date_optional_time",
-                                "gte": gte,
-                                "lte": lte
-                            }
-                        }
-                    }
+                    {"query_string": {"query": "ESID0002", "time_zone": "Europe/Stockholm"}},
+                    {"range": {"Created_Time": {"format": "strict_date_optional_time", "gte": gte, "lte": lte}}}
                 ]
             }
         },
         "size": 9999
     }
 
-    # ---- API request ----
     r = requests.post(url, data=json.dumps(data), headers=headers, verify=False)
     content = json.loads(r.text)
 
-    # ---- Convert to DataFrame ----
     if 'results' in content:
         df_day = pd.json_normalize(content['results'])
         all_data.append(df_day)
-        daily_counts.append({
-            "date": gte[:10],
-            "count": len(df_day)
-        })
+        daily_counts.append({"date": gte[:10], "count": len(df_day)})
         print(f"✅ {gte[:10]} → {len(df_day)} rows")
     else:
         print(f"⚠️ No data for {gte[:10]}")
@@ -70,73 +62,69 @@ if all_data:
     df_all = pd.concat(all_data, ignore_index=True)
     print(f"\nTotal collected rows: {len(df_all)}")
 
-# ---- Convert daily counts to DataFrame ----
 df_counts = pd.DataFrame(daily_counts)
-
-# ---- Save daily counts and raw data ----
 df_counts.to_csv("daily_counts.csv", index=False)
-#df_all.to_csv("all_data.csv", index=False)
-#print("💾 Saved 'daily_counts.csv' and 'all_data.csv'")
 
-# ---- Plot actual daily counts ----
-plt.figure(figsize=(8, 4))
-plt.plot(df_counts["date"], df_counts["count"], marker='o', label="Actual")
-plt.title("Daily Data Volume")
-plt.xlabel("Date")
-plt.ylabel("Number of Rows")
-plt.grid(True)
-plt.legend()
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.savefig("daily_data_volume.png", dpi=300)
-plt.close()
-print("📊 Saved 'daily_data_volume.png'")
-
-# ---- INTERPOLATION + TREND-BASED EXTRAPOLATION ----
+# ---- INTERPOLATION + TREND FORECAST ----
 df_counts["date"] = pd.to_datetime(df_counts["date"])
 df_counts.set_index("date", inplace=True)
 
-# Daily frequency with missing days as NaN
 df_daily = df_counts.resample('D').asfreq()
-
-# Linear interpolation for missing historical days
 df_daily["count"] = df_daily["count"].interpolate(method='linear')
 
-# Prepare historical data for cubic spline
+# Historical data for cubic spline
 y = df_daily["count"].dropna().values
 x = np.arange(len(y))
-
-# Cubic spline for smooth interpolation and extrapolation
 cs = CubicSpline(x, y, bc_type='natural')
 
-# Extend to future days
-future_days = 3
 total_days = len(df_daily) + future_days
 x_full = np.arange(total_days)
 full_counts = cs(x_full)
 
-# ---- Ensure counts are non-negative integers ----
-full_counts = np.maximum(full_counts, 0)  # no negatives
-full_counts = np.round(full_counts).astype(int)  # integers
+# Non-negative integers
+full_counts = np.maximum(full_counts, 0)
+full_counts = np.round(full_counts).astype(int)
 
-# Create full DataFrame with dates
 full_index = pd.date_range(df_daily.index[0], periods=total_days)
 full_df = pd.DataFrame({"count": full_counts}, index=full_index)
-
-# ---- SAVE INTERPOLATED + TREND FORECAST ----
 full_df.to_csv("trend_forecast.csv")
 print("💾 Saved 'trend_forecast.csv'")
 
-# ---- PLOT TREND FORECAST ----
-plt.figure(figsize=(8, 4))
-plt.plot(df_daily.index, df_daily["count"], "o-", label="Actual")
-plt.plot(full_df.index, full_df["count"], "--", label="Trend Forecast")
-plt.title("Trend-Based Prediction of Daily Data Volume")
+# ---- PLOT WITH INDICATORS (actual + forecast) ----
+plt.figure(figsize=(10,5))
+
+# Color-coded actual points
+for i, val in enumerate(df_daily["count"].values):
+    date = df_daily.index[i]
+    if val == 0:
+        color = 'green'
+    elif val <= 50:
+        color = 'yellow'
+    else:
+        color = 'red'
+    plt.scatter(date, val, color=color, label="_nolegend_")  # _nolegend_ avoids duplicate legend entries
+
+# Color-coded forecast points
+for i, val in enumerate(full_counts):
+    date = full_index[i]
+    if val == 0:
+        color = 'green'
+    elif val <= 100:
+        color = 'yellow'
+    else:
+        color = 'red'
+    plt.scatter(date, val, color=color, edgecolor='black')  # add black edge for forecast points to differentiate
+
+# Connect lines for actual and forecast trends
+plt.plot(df_daily.index, df_daily["count"], "-", color='black', alpha=1.0, label="Actual Trend")
+plt.plot(full_df.index, full_df["count"], "--", color='blue', alpha=0.5, label="Forecast Trend")
+
+plt.title("Trend-Based Prediction with Color Indicators")
 plt.xlabel("Date")
 plt.ylabel("Row Count")
-plt.legend()
 plt.grid(True)
+plt.legend()
 plt.tight_layout()
-plt.savefig("trend_forecast.png", dpi=300)
+plt.savefig("trend_forecast_with_indicators.png", dpi=300)
 plt.close()
-print("📈 Saved 'trend_forecast.png'")
+print("📈 Saved 'trend_forecast_with_indicators.png'")
