@@ -4,11 +4,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.interpolate import CubicSpline
 import ast
 # import regex as re
 import re
 PROD_URL =  "elastic server link"
-PROD_AUTH = "Bearer "+"your token" # Fill in your appliaction token
+PROD_AUTH = "" # Fill in your appliaction token
 url =  PROD_URL+ "/nosa-service-metadata/metadata/query"
 headers = {'Content-type': 'application/json', 'Accept': 'application/json', 'Authorization': PROD_AUTH}
 # ---- Choose your time range ----
@@ -98,20 +99,25 @@ df_counts.set_index("date", inplace=True)
 # Daily frequency with missing days as NaN
 df_daily = df_counts.resample('D').asfreq()
 
-# Linear interpolation for historical missing days
+# Linear interpolation for missing historical days
 df_daily["count"] = df_daily["count"].interpolate(method='linear')
 
-# Fit trend line using historical data
+# Prepare historical data for cubic spline
 y = df_daily["count"].dropna().values
 x = np.arange(len(y))
-coef = np.polyfit(x, y, 2)  # degree 1 = linear trend
-trend = np.poly1d(coef)
+
+# Cubic spline for smooth interpolation and extrapolation
+cs = CubicSpline(x, y, bc_type='natural')
 
 # Extend to future days
-future_days=3
+future_days = 3
 total_days = len(df_daily) + future_days
 x_full = np.arange(total_days)
-full_counts = trend(x_full)
+full_counts = cs(x_full)
+
+# ---- Ensure counts are non-negative integers ----
+full_counts = np.maximum(full_counts, 0)  # no negatives
+full_counts = np.round(full_counts).astype(int)  # integers
 
 # Create full DataFrame with dates
 full_index = pd.date_range(df_daily.index[0], periods=total_days)
@@ -134,4 +140,3 @@ plt.tight_layout()
 plt.savefig("trend_forecast.png", dpi=300)
 plt.close()
 print("📈 Saved 'trend_forecast.png'")
-
