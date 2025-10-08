@@ -8,7 +8,7 @@ from scipy.interpolate import CubicSpline
 import ast
 # import regex as re
 import re
-PROD_URL =  "elastic url"
+PROD_URL =  "elastic search url"
 PROD_AUTH = "" # Fill in your appliaction token
 url =  PROD_URL+ "/nosa-service-metadata/metadata/query"
 headers = {'Content-type': 'application/json', 'Accept': 'application/json', 'Authorization': PROD_AUTH}
@@ -61,9 +61,18 @@ for i in range(days_to_collect):
 if all_data:
     df_all = pd.concat(all_data, ignore_index=True)
     print(f"\nTotal collected rows: {len(df_all)}")
-
+df_all.to_csv("all_data.csv")
+print("💾 Saved 'all_data.csv'")
 df_counts = pd.DataFrame(daily_counts)
-df_counts.to_csv("daily_counts.csv", index=False)
+
+# ---- Define status function ----
+def get_status(count):
+    if count == 0:
+        return "Pass"
+    elif count <= 100:
+        return "Warning"
+    else:
+        return "Error"
 
 # ---- INTERPOLATION + TREND FORECAST ----
 df_counts["date"] = pd.to_datetime(df_counts["date"])
@@ -71,6 +80,11 @@ df_counts.set_index("date", inplace=True)
 
 df_daily = df_counts.resample('D').asfreq()
 df_daily["count"] = df_daily["count"].interpolate(method='linear')
+
+# Add status for actual counts
+df_daily["status"] = df_daily["count"].apply(get_status)
+df_daily.to_csv("daily_counts_with_status.csv")
+print("💾 Saved 'daily_counts_with_status.csv'")
 
 # Historical data for cubic spline
 y = df_daily["count"].dropna().values
@@ -87,24 +101,33 @@ full_counts = np.round(full_counts).astype(int)
 
 full_index = pd.date_range(df_daily.index[0], periods=total_days)
 full_df = pd.DataFrame({"count": full_counts}, index=full_index)
-full_df.to_csv("trend_forecast.csv")
-print("💾 Saved 'trend_forecast.csv'")
+
+full_df_reset = full_df.reset_index()
+full_df_reset.rename(columns={"index": "date"}, inplace=True)
+full_df_reset["status"] = full_df_reset["count"].apply(get_status)
+full_df_reset.to_csv("trend_forecast_with_status.csv", index=False)
 
 # ---- PLOT WITH INDICATORS (actual + forecast) ----
 plt.figure(figsize=(10,5))
+
+# Plot actual line (solid)
+plt.plot(df_daily.index, df_daily["count"], "-", color='black', alpha=1.0, label="Actual Trend")
 
 # Color-coded actual points
 for i, val in enumerate(df_daily["count"].values):
     date = df_daily.index[i]
     if val == 0:
         color = 'green'
-    elif val <= 50:
+    elif val <= 100:
         color = 'yellow'
     else:
         color = 'red'
-    plt.scatter(date, val, color=color, label="_nolegend_")  # _nolegend_ avoids duplicate legend entries
+    plt.scatter(date, val, color=color, label="_nolegend_")
 
-# Color-coded forecast points
+# Plot forecast line (dashed)
+plt.plot(full_df.index, full_df["count"], "--", color='blue', alpha=0.5, label="Forecast Trend")
+
+# Color-coded forecast points with black edge
 for i, val in enumerate(full_counts):
     date = full_index[i]
     if val == 0:
@@ -113,11 +136,7 @@ for i, val in enumerate(full_counts):
         color = 'yellow'
     else:
         color = 'red'
-    plt.scatter(date, val, color=color, edgecolor='black')  # add black edge for forecast points to differentiate
-
-# Connect lines for actual and forecast trends
-plt.plot(df_daily.index, df_daily["count"], "-", color='black', alpha=1.0, label="Actual Trend")
-plt.plot(full_df.index, full_df["count"], "--", color='blue', alpha=0.5, label="Forecast Trend")
+    plt.scatter(date, val, color=color, edgecolor='black', label="_nolegend_")
 
 plt.title("Trend-Based Prediction with Color Indicators")
 plt.xlabel("Date")
