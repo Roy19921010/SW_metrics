@@ -8,8 +8,8 @@ from scipy.interpolate import CubicSpline
 import ast
 # import regex as re
 import re
-PROD_URL =  "elastic search url"
-PROD_AUTH = "" # Fill in your appliaction token
+PROD_URL =  "https://nosa.internal.ericsson.com"
+PROD_AUTH = "Bearer "+"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImVpaW5sdWoiLCJkaXNwbGF5TmFtZSI6IlJveSBMaXUgQSIsImV4cGlyZXNJbiI6Ik5vIEV4cGlyeSBTZXQiLCJ0b2tlblR5cGUiOiJBUFAiLCJtZXRhRGF0YSI6eyJhcHBJZCI6IiJ9LCJpYXQiOjE2Njg1OTA3MDh9.mNNHkgpSfrAKHNi_0V1xJWR51Mo9DXY3C5mTJ42cAgw" # Fill in your appliaction token
 url =  PROD_URL+ "/nosa-service-metadata/metadata/query"
 headers = {'Content-type': 'application/json', 'Accept': 'application/json', 'Authorization': PROD_AUTH}
 # ---- USER INPUTS ----
@@ -111,7 +111,7 @@ full_df_reset.to_csv("trend_forecast_with_status.csv", index=False)
 plt.figure(figsize=(10,5))
 
 # Plot actual line (solid)
-plt.plot(df_daily.index, df_daily["count"], "-", color='black', alpha=1.0, label="Actual Trend")
+plt.plot(df_daily.index, df_daily["count"], "-", color='black', alpha=1.0, label="Actual")
 
 # Color-coded actual points
 for i, val in enumerate(df_daily["count"].values):
@@ -125,7 +125,7 @@ for i, val in enumerate(df_daily["count"].values):
     plt.scatter(date, val, color=color, label="_nolegend_")
 
 # Plot forecast line (dashed)
-plt.plot(full_df.index, full_df["count"], "--", color='blue', alpha=0.5, label="Forecast Trend")
+plt.plot(full_df.index, full_df["count"], "--", color='blue', alpha=0.5, label="Forecast")
 
 # Color-coded forecast points with black edge
 for i, val in enumerate(full_counts):
@@ -138,9 +138,9 @@ for i, val in enumerate(full_counts):
         color = 'red'
     plt.scatter(date, val, color=color, edgecolor='black', label="_nolegend_")
 
-plt.title("Trend-Based Prediction with Color Indicators")
+plt.title("Fan toggling count with predictions")
 plt.xlabel("Date")
-plt.ylabel("Row Count")
+plt.ylabel("Fan toggling Count")
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
