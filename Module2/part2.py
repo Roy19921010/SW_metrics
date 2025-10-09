@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 REPO_PATH = "/home/eiinluj/phd/courses/test_metrics_course/week2/rdi-datastream-dump-archiver"
 SRC_PATH_IDENTIFIER = "src/main"
 TEST_PATH_IDENTIFIER = "src/test"
-NUM_COMMITS = 11
+NUM_COMMITS = 22
 
 # ---- INITIALIZE REPO ----
 repo = git.Repo(REPO_PATH)
@@ -72,22 +72,29 @@ plt.title("Source vs Test LOC Changes per Commit")
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
-plt.savefig("loc_changes.png", dpi=300)
+plt.savefig(os.path.join(REPO_PATH, "loc_changes.png"), dpi=300)
 plt.close()
 print(f"📈 Saved LOC changes figure to: {os.path.join(REPO_PATH, 'loc_changes.png')}")
 
-# ---- PLOT FIGURE 2: Ratio ----
+# ---- PLOT FIGURE 2: Ratio with color and labels ----
 plt.figure(figsize=(12,5))
-plt.plot(df["commit_hash"], df["ratio_src_vs_test"], marker='x', linestyle='--', color='purple')
+
+# Color and labeling logic
+for i, (commit, ratio) in enumerate(zip(df["commit_hash"], df["ratio_src_vs_test"])):
+    color = "green" if 0.2 <= ratio <= 5 else "red"
+    plt.scatter(commit, ratio, color=color, s=80, edgecolor='black', zorder=3)
+    plt.text(commit, ratio + 0.1, f"{ratio:.2f}", ha='center', va='bottom', fontsize=8)
+
+plt.plot(df["commit_hash"], df["ratio_src_vs_test"], linestyle='--', color='gray', alpha=0.5)
 plt.xticks(rotation=45)
 plt.xlabel("Commit")
 plt.ylabel("Source/Test LOC Change Ratio")
-plt.title("Ratio of Source to Test LOC Changes per Commit")
+plt.title("Ratio of Source to Test LOC Changes per Commit (Color-Coded)")
 plt.grid(True)
 plt.tight_layout()
-plt.savefig("loc_ratio.png", dpi=300)
+plt.savefig(os.path.join(REPO_PATH, "loc_ratio_colored.png"), dpi=300)
 plt.close()
-print(f"📈 Saved LOC ratio figure to: {os.path.join(REPO_PATH, 'loc_ratio.png')}")
+print(f"📊 Saved LOC ratio figure to: {os.path.join(REPO_PATH, 'loc_ratio_colored.png')}")
 
 # ---- PRINT DATAFRAME ----
 print(df)
