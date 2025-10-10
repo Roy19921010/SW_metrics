@@ -3,8 +3,9 @@ import os
 import git
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
-# ---- CONFIGURATION ----
+# ---- USER INPUTS ----
 REPO_PATH = "/home/eiinluj/phd/courses/test_metrics_course/week2/rdi-datastream-dump-archiver"
 SRC_PATH_IDENTIFIER = "src/main"
 TEST_PATH_IDENTIFIER = "src/test"
@@ -54,12 +55,12 @@ for i in range(len(commits) - 1):
 
 # ---- SAVE RESULTS ----
 df = pd.DataFrame(results)
+df["ratio_src_vs_test"] = df["src_total_change"] / df["test_total_change"].replace(0, 1)
+df["balance_status"] = df["ratio_src_vs_test"].apply(lambda r: "Balanced" if 0.2 <= r <= 5 else "Unbalanced")
+
 csv_path = os.path.join(REPO_PATH, "commit_loc_changes.csv")
 df.to_csv(csv_path, index=False)
-print(f"✅ Saved LOC change statistics to: {csv_path}")
-
-# ---- COMPUTE RATIO ----
-df["ratio_src_vs_test"] = df["src_total_change"] / df["test_total_change"].replace(0, 1)
+print(f"✅ Saved LOC change statistics with balance info to: {csv_path}")
 
 # ---- PLOT FIGURE 1: LOC Changes ----
 plt.figure(figsize=(12,5))
@@ -76,10 +77,9 @@ plt.savefig(os.path.join(REPO_PATH, "loc_changes.png"), dpi=300)
 plt.close()
 print(f"📈 Saved LOC changes figure to: {os.path.join(REPO_PATH, 'loc_changes.png')}")
 
-# ---- PLOT FIGURE 2: Ratio with color and labels ----
+# ---- PLOT FIGURE 2: Ratio with color, labels, and legend ----
 plt.figure(figsize=(12,5))
 
-# Color and labeling logic
 for i, (commit, ratio) in enumerate(zip(df["commit_hash"], df["ratio_src_vs_test"])):
     color = "green" if 0.2 <= ratio <= 5 else "red"
     plt.scatter(commit, ratio, color=color, s=80, edgecolor='black', zorder=3)
@@ -89,7 +89,15 @@ plt.plot(df["commit_hash"], df["ratio_src_vs_test"], linestyle='--', color='gray
 plt.xticks(rotation=45)
 plt.xlabel("Commit")
 plt.ylabel("Source/Test LOC Change Ratio")
-plt.title("Ratio of Source to Test LOC Changes per Commit (Color-Coded)")
+plt.title("Ratio of Source to Test LOC Changes per Commit")
+
+# Custom legend for color meaning
+legend_elements = [
+    Line2D([0], [0], marker='o', color='w', label='Balanced (0.2–5)', markerfacecolor='green', markersize=10, markeredgecolor='black'),
+    Line2D([0], [0], marker='o', color='w', label='Unbalanced (<0.2 or >5)', markerfacecolor='red', markersize=10, markeredgecolor='black')
+]
+plt.legend(handles=legend_elements, loc="best")
+
 plt.grid(True)
 plt.tight_layout()
 plt.savefig(os.path.join(REPO_PATH, "loc_ratio_colored.png"), dpi=300)
